@@ -72,7 +72,7 @@ public class Drill
    inputFile += ".drl";
   }
 
-  System.out.printf("drill 01/23/2014\n");
+  System.out.printf("drill 03/02/2014\n");
   toolSize = new Double[20];
   list = new ArrayList<>();
   aperture = new Drill.ApertureList();
@@ -177,8 +177,7 @@ public class Drill
 
    image.getData();
    image.grid();
-   image.setData();
-   image.write(project);
+   image.write(image.data,project);
 
    nc0.out.printf("m5\n");
    nc0.moveRapidZ(1.5);
@@ -539,9 +538,9 @@ public class Drill
    g.setStroke(stroke);
 
    Line2D shape = new Line2D.Double((x0 * scale),
-				    h0 - (y0 * scale),
+				    (y0 * scale),
 				    (x1 * scale),
-				    h0 - (y1 * scale));
+				    (y1 * scale));
    g.draw(shape);
   }
 
@@ -555,7 +554,7 @@ public class Drill
    double offset = r * scale;
    double d = 2 * offset;
    Ellipse2D shape = new Ellipse2D.Double((x * scale - offset),
-					  h0 - (y * scale + offset),
+					  (y * scale - offset),
 					  d,d);
    g.fill(shape);
   }
@@ -591,12 +590,12 @@ public class Drill
    int y1 = h0 - 100;
    for (int x = 100; x < w0 - 100; x++)
    {
-    int i0 = x + h0 - y0 * w0;
+    int i0 = x + y0 * w0;
     if (data[i0] == BACKGROUND)
     {
      data[i0] = GRID;
     }
-    i0 = x + h0 - y1 * w0;
+    i0 = x + y1 * w0;
     if (data[i0] == BACKGROUND)
     {
      data[i0] = GRID;
@@ -607,12 +606,12 @@ public class Drill
    int x1 = w0 - 100;
    for (int y = 100; y < h0 - 100; y++)
    {
-    int i0 = x0 + h0 - y * w0;
+    int i0 = x0 + y * w0;
     if (data[i0] == BACKGROUND)
     {
      data[i0] = GRID;
     }
-    i0 = x1 + h0 - y * w0;
+    i0 = x1 + y * w0;
     if (data[i0] == BACKGROUND)
     {
      data[i0] = GRID;
@@ -623,7 +622,7 @@ public class Drill
    {
     for (int y = 0; y < h0; y++)
     {
-     int i0 = x + h0 - y * w0;
+     int i0 = x + y * w0;
      if (data[i0] == BACKGROUND)
      {
       data[i0] = GRID;
@@ -633,7 +632,7 @@ public class Drill
 
    for (int y = 0; y < h0; y += 500)
    {
-    int i0 = h0 - y * w0;
+    int i0 = y * w0;
     for (int x = 0; x < w0; x++)
     {
      if (data[i0] == BACKGROUND)
@@ -725,7 +724,7 @@ public class Drill
      double offset = val1 / 2;
      double diam = val1 * scale;
      Ellipse2D shape = new Ellipse2D.Double((x0 - offset) * scale,
-					    image.h0 - (y0 + offset) * scale,
+					    (y0 - offset) * scale,
 					    diam,diam);
      g.fill(shape);
     }
@@ -734,7 +733,7 @@ public class Drill
      double xOfs = val1 / 2;
      double yOfs = val2 / 2;
      Rectangle2D shape = new Rectangle2D.Double(((x0 - xOfs) * scale),
-						image.h0 - (y0 + yOfs) * scale,
+						(y0 - yOfs) * scale,
 						val1 * scale ,val2 * scale);
      g.fill(shape);
     }
