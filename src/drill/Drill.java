@@ -16,11 +16,17 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
+
+import java.text.SimpleDateFormat;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 
 import java.util.regex.Matcher;
@@ -47,8 +53,12 @@ import Nc.Nc;
 public class Drill
 {
  ArrayList<Hole> list;
+ ArrayList<Hole1> list1 = null;
  Double[] toolSize;
  Drill.ApertureList aperture;
+ String inputFile;
+ double xSize;
+ double ySize;
  double curX = 0.0;
  double curY = 0.0;
  int xMax = 0;
@@ -59,92 +69,179 @@ public class Drill
  Image image;
  double scale = 1000.0;
  double gScale = 10000.0;
+ boolean output = true;
+ boolean flipX = false;
+ boolean mirrorX = false;
+ boolean mirrorY = false;
+ double mirrorXSize = 0.0;
+ double mirrorYSize = 0.0;
+ boolean dxf = false;
+ boolean probeFlag = false;
+ boolean probeHoles = false;
+ double probeRetract = 0.020;
+ double probeDepth = -0.010;
+ String side;
+ int probeX;
+ int probeY;
 
- public static final boolean DXF = false;
+ double depth;
+ double retract;
+ double safeZ;
+ double feed;
+ double change;
 
- public static final int BACKGROUND = new Color(0xe0,0xff,0xff).getRGB();
- public static final int GRID       = new Color(0xe0,0x00,0xff).getRGB();
+ public static final int BACKGROUND = new Color(0xe0, 0xff, 0xff).getRGB();
+ public static final int GRID       = new Color(0xe0, 0x00, 0xff).getRGB();
 
- public Drill(String inputFile)
+ public Drill(String inputFile, boolean flipX, boolean output, boolean dxf)
  {
-  if (inputFile.indexOf(".") < 0)
+  this.inputFile = inputFile;
+  this.flipX = flipX;
+  this.output = output;
+  this.dxf = dxf;
+ }
+
+ public void setParameters(double depth, double retract, double safeZ,
+			   double feed, double change)
+ {
+  this.depth = depth;
+  this.retract = retract;
+  this.safeZ = safeZ;
+  this.feed = feed;
+  this.change = change;
+ }
+
+ public void setProbe(boolean probeFlag, boolean probeHoles,
+		      int probeX, int probeY, String side,
+		      double probeDepth, double probeRetract)
+ {
+  this.probeFlag = probeFlag;
+  this.probeHoles = probeHoles;
+  this.probeX = probeX;
+  this.probeY = probeY;
+  this.side = side;
+  this.probeDepth = probeDepth;
+  this.probeRetract = probeRetract;
+ }
+
+ public void setMirror(boolean mirrorX, double mirrorXSize,
+		       boolean mirrorY, double mirrorYSize)
+ {
+  this.mirrorX = mirrorX;
+  this.mirrorXSize = mirrorXSize;
+  this.mirrorY = mirrorY;
+  this.mirrorYSize = mirrorYSize;
+ }
+
+ public void process()
+ {
+  toolSize = new Double[20];
+  list = new ArrayList<>();
+  if (probeHoles)
+  {
+   list1 = new ArrayList<>();
+  }
+  aperture = new Drill.ApertureList();
+
+  if (!inputFile.contains("."))
   {
    inputFile += ".drl";
   }
-
-  System.out.printf("drill 03/02/2014\n");
-  toolSize = new Double[20];
-  list = new ArrayList<>();
-  aperture = new Drill.ApertureList();
 
   File fIn = new File(inputFile);
 
   if (fIn.isFile())
   {
    String project = inputFile.split("\\.")[0];
-   if (DXF)
+   if (dxf)
    {
-    d = new Dxf(project + ".dxf");
+    d = new Dxf();
+    d.init(project + ".dxf");
    }
    String boardFile = project + ".gbr";
    boardSize(boardFile);
-   Date date = new Date();
-   nc0 = new Nc(project + ".ngc");
-   nc1 = new Nc(project + "1.ngc");
-   nc0.out.printf("(%s %s)\n",fIn.getAbsolutePath(),date.toString());
-   nc1.out.printf("(%s %s)\n",fIn.getAbsolutePath(),date.toString());
-   nc0.header();
-   nc1.header();
+   if (mirrorXSize != 0)
+   {
+    xMax = (int) (mirrorXSize * gScale);
+   }
+   if (mirrorYSize != 0.0)
+   {
+    yMax = (int) (mirrorYSize * gScale);
+   }
+   SimpleDateFormat sdf = new SimpleDateFormat("EEE LLL dd HH:mm:ss yyyy");
+   String date = sdf.format(new Date());
+   if (output)
+   {
+    nc0 = new Nc(project + ".ngc");
+    nc1 = new Nc(project + "1.ngc");
+    nc0.out.printf("(%s %s)\n", fIn.getAbsolutePath(), date);
+    nc1.out.printf("(%s %s)\n", fIn.getAbsolutePath(), date);
+    nc0.header();
+    nc1.header();
 
-   String line;
-    
-   image = new Image(xMax,yMax);
+    nc0.out.printf("g54	(coordinate system)\n");
+    nc0.out.printf("#1 = 0      (offset)\n");
+    nc0.out.printf("#2 = 1      (mirror)\n");
+    nc0.out.printf("#3 = %6.3f (depth)\n", depth);
+    nc0.out.printf("#4 = %5.3f  (retract)\n", retract);
+    nc0.setFeedRate(feed);
+    nc0.out.printf("s25000\n");
+    nc0.moveRapidZ(safeZ);
+    nc0.moveRapid(0.25, 0.25);
+
+    nc1.out.printf("g54	(coordinate system)\n");
+    if (flipX)
+    {
+     double size = mirrorXSize != 0.0 ? mirrorXSize : xSize;
+     nc1.out.printf("#1 = [%5.3f - 0.000] (offset)\n", size);
+    }
+    else
+    {
+     double size = mirrorYSize != 0.0 ? mirrorYSize : ySize;
+     nc1.out.printf("#1 = [%5.3f - 0.000] (offset)\n", size);
+    }
+    nc1.out.printf("#2 = -1    (mirror)\n");
+    nc1.out.printf("#3 = 0.500 (retract)\n");
+    nc1.setFeedRate(15.0);
+    nc1.moveRapidZ(safeZ);
+    nc1.moveRapid(0.25, 0.25);
+    nc1.moveRapidZ("[#3]");
+   }
+
+   image = new Image(xMax, yMax);
    String topName = project + "_t.gbr";
    pads(topName);
-
-   nc0.out.printf("#1 = 0      (offset)\n");
-   nc0.out.printf("#2 = 1      (mirror)\n");
-   nc0.out.printf("#3 = -0.095 (depth)\n");
-   nc0.out.printf("#4 = 0.030  (retract)\n");
-   nc0.setFeedRate(7.0);
-   nc0.out.printf("s25000\n");
-   nc0.moveRapidZ(0.75);
-   nc0.moveRapid(0.25,0.25);
-
-   nc1.out.printf("#1 = [%5.3f - 0.000] (offset)\n",yMax / gScale);
-   nc1.out.printf("#2 = -1    (mirror)\n");
-   nc1.out.printf("#3 = 0.500 (retract)\n");
-   nc1.setFeedRate(15.0);
-   nc1.moveRapidZ("0.75");
-   nc1.moveRapid(0.25,0.25);
-   nc1.moveRapidZ("[#3]");
 
    int currentTool = -1;
    @SuppressWarnings("UnusedAssignment")
    int lastTool = -1;
 
+   String line;
    try (BufferedReader in = new BufferedReader(new FileReader(fIn)))
    {
     while ((line = in.readLine()) != null)
     {
+     line = line.trim();
      if (line.indexOf("X") == 0) // T01C0.035
      {
-      String x = line.substring(1,7);
-      String y = line.substring(9,15);
+      String x = line.substring(1, 7);
+      String y = line.substring(9, 15);
        
       double xVal = Double.valueOf(x) / scale;
       double yVal = Double.valueOf(y) / scale;
-       
-      image.circle(xVal,yVal,toolSize[currentTool]  / 2);
-       
-      Hole h = new Hole(xVal,yVal);
+
+      Hole h = new Hole(xVal, yVal);
       list.add(h);
+      if (probeHoles)
+      {
+       list1.add(new Hole1(xVal, yVal, (double) toolSize[currentTool]));
+      }
      }
      else if (line.indexOf("T") == 0)
      {
       if (line.indexOf("C") == 3) // T01C0.035
       {
-       int t = Integer.valueOf(line.substring(1,3));
+       int t = Integer.valueOf(line.substring(1, 3));
        if (toolSize[t] == null)
        {
 	toolSize[t] = Double.valueOf(line.substring(4));
@@ -153,17 +250,17 @@ public class Drill
       else			// T01
       {
        lastTool = currentTool;
-       currentTool = Integer.valueOf(line.substring(1,3));
+       currentTool = Integer.valueOf(line.substring(1, 3));
        if (lastTool > 0)
        {
 	if (currentTool != lastTool)
 	{
 //	 if (true)
-	 process0(list,lastTool);
+	 process0(list, lastTool);
 //	 else
 //	 {
-//	  list.add(0,new Hole(xLoc,yLoc));
-//	  process1(list,lastTool);
+//	  list.add(0, new Hole(xLoc, yLoc));
+//	  process1(list, lastTool);
 //	 }
 	}
        }
@@ -175,18 +272,165 @@ public class Drill
    {
    }
 
+   if (probeFlag)
+   {
+    if (probeHoles)
+    {
+     if(mirrorX || mirrorY)
+     {
+      for (Hole1 h : list1)
+      {
+       if (mirrorX)
+       {
+	h.x = mirrorXSize - h.x;
+       }
+       if (mirrorY)
+       {
+	h.y = mirrorYSize - h.y;
+       }
+      }
+     }
+     Collections.sort(list1);
+    }
+
+    int xPoints = probeX;
+    int yPoints = probeY;
+    double margin = 0.125;
+    double xStep = (this.xSize - 2 * margin) / (xPoints - 1);
+    double yStep = (this.ySize - 2 * margin) / (yPoints - 1);
+    double x = margin;
+    double y = margin;
+    double y1 = this.ySize - margin;
+
+    String probeFile = project + "_" + side + "p.ngc";
+    File pOut = new File(probeFile);
+    try
+    {
+     PrintWriter prb;
+     prb = new PrintWriter(new BufferedWriter(new FileWriter(pOut)));
+
+     prb.printf("(%s %s)\n", probeFile, date);
+     prb.printf("(xSize %6.4f ySize %6.4f retract %6.4f depth %6.4f)\n",
+		this.xSize, this.ySize, probeRetract, probeDepth);
+     prb.printf("(xPoints %d yPoints %d margin %6.4f " +
+ 		"xStep %6.4f yStep %6.4f)\n",
+		xPoints, yPoints, margin, xStep, yStep);
+     prb.printf("g54	(coordinate system 1)\n");
+     prb.printf("g20	(units inches)\n");
+     prb.printf("g61	(exact path)\n");
+     prb.printf("f1.0	(probe feed rate)\n\n");
+     prb.printf("g0 z%6.4f	(safe z)\n", safeZ);
+
+     prb.printf("g0 x%6.4f y%6.4f (start position)\n\n", x, y);
+     prb.printf("m0	(pause to check position)\n");
+     prb.printf("g0 z%6.4f\n", probeRetract);
+     prb.printf("g38.2 z%6.4f\n", probeDepth);
+     prb.printf("g10 L20 P0 z0 (zero z)\n");
+     prb.printf("g0 z%6.4f\n\n", probeRetract);
+		
+     prb.printf("(PROBEOPEN %s_%s.prb)\n", project, side);
+
+     boolean fwd = true;
+     int j0;
+     for (int i = 0; i < xPoints; i++)
+     {
+      if (fwd)
+      {
+       y = margin;
+       j0 = 0;
+      }
+      else
+      {
+       y = y1;
+       j0 = yPoints - 1;
+      }
+      for (int j = 0; j < yPoints; j++)
+      {
+       if (!probeHoles)
+       {
+	prb.printf("g0 x%6.4f y%6.4f (%d %d x%6.4f y%6.4f)\n",
+		   x, y, i, j0, x, y);
+	image.probe(x, y, 0.010);
+       }
+       else
+       {
+	double yOffset;
+	boolean found = false;
+	for (Hole1 hole : list1)
+	{
+	 double dx = x - hole.x;
+	 double dy = y - hole.y;
+	 double dist = Math.hypot(dx, dy);
+	 if (dist < (hole.size + 0.025))
+	 {
+	  double r = hole.size + 0.025;
+	  yOffset = Math.sqrt(r * r - dx * dx);
+	  if (dy < 0)
+	  {
+	   yOffset = -yOffset;
+	  }
+	  yOffset += hole.y;
+//          System.out.printf("%d %d dist %6.4f %6.4f dx %6.3f dy %6.3f " +
+//			      "x %6.4f y %6.4f offset %6.3f\n",
+//			      i, j0, dist, hole.size + 0.025, dx, dy,
+//			      x, y + yOffset, yOffset);
+	  image.circle(Color.GREEN, x, y, 0.010);
+	  found = true;
+	  prb.printf("g0 x%6.4f y%6.4f (%d %d x%6.4f y%6.4f)\n",
+		     x, yOffset, i, j0, x, y);
+	  image.probe(x, yOffset, 0.010);
+	  break;
+	 }
+	}
+	if (!found)
+	{
+	 prb.printf("g0 x%6.4f y%6.4f (%d %d x%6.4f y%6.4f)\n",
+		    x, y, i, j0, x, y);
+	 image.probe(x, y, 0.010);
+	}
+       }
+       prb.printf("g38.2 z%6.4f\n", probeDepth);
+       prb.printf("g0 z%6.4f\n\n", probeRetract);
+       if (fwd)
+       {
+	y += yStep;
+	j0 += 1;
+       }
+       else
+       {
+	y -= yStep;
+	j0 -= 1;
+       }
+      }
+      fwd = !fwd;
+      x += xStep;
+     }
+     prb.printf("(PROBECLOSE %s.prb)\n", project);
+     prb.printf("g0 z%5.3f\n", safeZ);
+     prb.printf("g0 x%5.3f y%5.3f\n", 0.0, 0.0);
+     prb.printf("m2	(end of program)\n");
+     prb.close();
+    }
+    catch (IOException e)
+    {
+    }
+   }
+   
    image.getData();
    image.grid();
-   image.write(image.data,project);
+   image.write(image.data, project);
 
-   nc0.out.printf("m5\n");
-   nc0.moveRapidZ(1.5);
-   nc0.moveRapid(0.0,0.0);
-   nc0.close();
+   if (output)
+   {
+    nc0.out.printf("m5\n");
+    nc0.moveRapidZ(safeZ);
+    nc0.moveRapid(0.0, 0.0);
+    nc0.close();
 
-   nc1.moveRapid(0.0,0.0);
-   nc1.close();
-   if (DXF)
+    nc1.moveRapid(0.0, 0.0);
+    nc1.close();
+   }
+   if (dxf)
    {
     d.end();
    }
@@ -205,6 +449,7 @@ public class Drill
     String line;
     while ((line = in.readLine()) != null)
     {
+     line = line.trim();
      if (line.startsWith("%"))
      {
       continue;
@@ -217,6 +462,10 @@ public class Drill
       if (xStr.length() != 0)
       {
        int x = Integer.parseInt(xStr);
+       if (x > 100000)
+       {
+	x /= 100;
+       }
        if (x > xMax)
        {
 	xMax = x;
@@ -225,6 +474,10 @@ public class Drill
       if (yStr.length() != 0)
       {
        int y = Integer.parseInt(yStr);
+       if (y > 100000)
+       {
+	y /= 100;
+       }
        if (y > yMax)
        {
 	yMax = y;
@@ -237,7 +490,18 @@ public class Drill
    {
     System.out.println(e);
    }
-   System.out.printf("Size x %5.3f y %5.3f\n",xMax / gScale,yMax / gScale);
+   if ((xSize == 0.0)
+   &&  (xMax != 0 ))
+   {
+    xSize = xMax / gScale;
+   }
+   if ((ySize == 0.0)
+   &&  (yMax != 0))
+   {
+    ySize = yMax / gScale;
+   }
+   
+   System.out.printf("Size x %5.3f y %5.3f\n", xSize, ySize);
   }
  }
 
@@ -260,6 +524,7 @@ public class Drill
     String line;
     while ((line = in.readLine()) != null)
     {
+     line = line.trim();
      Matcher m = pG.matcher(line);
      if (m.find())
      {
@@ -291,7 +556,7 @@ public class Drill
 	{
 	 double x0 = xLoc / gScale;
 	 double y0 = yLoc / gScale;
-	 curAp.draw(g,x0,y0);
+	 curAp.draw(g, x0, y0);
 	}
 	break;
        }
@@ -308,18 +573,18 @@ public class Drill
        {
        case "C":
 	double d0 = Double.valueOf(m.group(3));
-	aperture.add(ap,d0);
+	aperture.add(ap, d0);
 	break;
        case "R":
 	double w = Double.valueOf(m.group(3));
 	double h = Double.valueOf(m.group(4));
-	aperture.add(ap,w,h);
+	aperture.add(ap, w, h);
 	break;
        default:
-	System.out.printf("invalid aperture %s %d\n",type,ap);
+	System.out.printf("invalid aperture %s %d\n", type, ap);
 	w = Double.valueOf(m.group(3));
 	h = Double.valueOf(m.group(4));
-	aperture.add(ap,w,h);
+	aperture.add(ap, w, h);
 	break;
        }
       }
@@ -336,60 +601,120 @@ public class Drill
  @SuppressWarnings("null")
  private void process0(ArrayList<Hole> list, int t)
  {
-  nc0.out.printf("m5\n");
-  nc0.moveRapidZ(1.5,String.format("Tool %d %5.3fin %4.2fmm",
-				   t,toolSize[t],toolSize[t] * 25.4));
-  nc0.pause();
-  nc0.out.printf("m3\n");
-  nc0.out.printf("g4 p 1.0\n");
-  nc0.moveRapidZ("0.5");
+  if (output)
+  {
+   nc0.out.printf("m5\n");
+   nc0.moveRapidZ(change, String.format("Tool %d %5.3fin %4.2fmm",
+					t, toolSize[t], toolSize[t] * 25.4));
+   nc0.pause();
+   nc0.out.printf("m3\n");
+   nc0.out.printf("g4 p 1.0\n");
+   nc0.moveRapidZ(safeZ);
+  }
 
-  int holes = list.size();
-
-  if (t == 1)
+  if (mirrorX || mirrorY)
+  {
+   for (Hole h : list)
+   {
+    if (mirrorX)
+    {
+     h.x = mirrorXSize - h.x;
+    }
+    if (mirrorY)
+    {
+     h.y = mirrorYSize - h.y;
+    }
+   }
+  }
+  
+  if (output &&
+      (t == 1))
   {
    Hole hmin = null;
    Hole hmax = null;
    double min = 999.0;
    double max = 0;
-   for (int i = 0; i < holes; i++)
+   if (flipX)
    {
-    Hole h = (Hole) list.get(i);
-    if (h != null)
+    for (Hole h : list)
     {
-     if (h.x < min)
+     if (h != null)
      {
-      hmin = h;
-      min = h.x;
-     }
-     else if (h.x == min)
-     {
-      if (h.y > hmin.y)
+      if (h.y < min)
       {
        hmin = h;
+       min = h.y;
       }
-     }
+      else if (h.y == min)
+      {
+       if (h.x > hmin.x)
+       {
+	hmin = h;
+       }
+      }
 
-     if (h.x > max)
-     {
-      hmax = h;
-      max = h.x;
-     }
-     else if (h.x == max)
-     {
-      if (h.y > hmax.y)
+      if (h.y > max)
       {
        hmax = h;
+       max = h.y;
+      }
+      else if (h.y == max)
+      {
+       if (h.x > hmax.x)
+       {
+	hmax = h;
+       }
       }
      }
     }
+
+    nc1.out.printf("g0 x[#1 + #2 * %3.3f] y%3.3f\n", hmin.x, hmin.y);
+    nc1.out.printf("m0\n");
+    nc1.out.printf("g0 x[#1 + #2 * %3.3f] y%3.3f\n", hmax.x, hmax.y);
+    nc1.out.printf("m0\n");
    }
-   nc1.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n",hmin.x,hmin.y);
-   nc1.out.printf("m0\n");
-   nc1.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n",hmax.x,hmax.y);
-   nc1.out.printf("m0\n");
+   else
+   {
+    for (Hole h : list)
+    {
+     if (h != null)
+     {
+      if (h.x < min)
+      {
+       hmin = h;
+       min = h.x;
+      }
+      else if (h.x == min)
+      {
+       if (h.y > hmin.y)
+       {
+	hmin = h;
+       }
+      }
+
+      if (h.x > max)
+      {
+       hmax = h;
+       max = h.x;
+      }
+      else if (h.x == max)
+      {
+       if (h.y > hmax.y)
+       {
+	hmax = h;
+       }
+      }
+     }
+    }
+
+    nc1.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n", hmin.x, hmin.y);
+    nc1.out.printf("m0\n");
+    nc1.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n", hmax.x, hmax.y);
+    nc1.out.printf("m0\n");
+   }
   }
 
+  int holeCount = list.size();
   double total = 0.0;
   int k = 0;
   while (list.size() > 0)
@@ -398,7 +723,7 @@ public class Drill
    int j = -1;
    for (int i = 0; i < list.size(); i++)
    {
-    double dist = list.get(i).dist(curX,curY);
+    double dist = list.get(i).dist(curX, curY);
     if (dist < min)
     {
      j = i;
@@ -407,32 +732,43 @@ public class Drill
    }
    total += min;
    Hole h = list.remove(j);
-   if (DXF)
+   image.circle(h.x, h.y, toolSize[t]  / 2);
+   if (dxf)
    {
-    d.line(curX,curY,h.x,h.y);
+    d.line(curX, curY, h.x, h.y);
    }
-   image.line(curX,curY,h.x,h.y);
-   if (DXF)
+   image.line(curX, curY, h.x, h.y);
+   if (dxf)
    {
-    d.text((h.x + curX) / 2.0 + .005,(h.y + curY) / 2.0 + 0.005,
-	   0.010,Integer.toString(k));
+    d.text((h.x + curX) / 2.0 + .005, (h.y + curY) / 2.0 + 0.005,
+	   0.010, Integer.toString(k));
    }
    curX = h.x;
    curY = h.y;
 
-   nc0.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n",curX,curY);
-   nc0.moveLinearZ("[#3]");
-   nc0.moveRapidZ("[#4]");
-
-   if (DXF)
+   if (output)
    {
-    d.circle(curX,curY,toolSize[t] / 2.0);
+    if (flipX)
+    {
+     nc0.out.printf("g0 x[#1 + #2 * %3.3f] y%3.3f\n", curX, curY);
+    }
+    else
+    {
+     nc0.out.printf("g0 x%3.3f y[#1 + #2 * %3.3f]\n", curX, curY);
+    }
+    nc0.moveLinearZ("[#3]");
+    nc0.moveRapidZ("[#4]");
    }
-//     System.out.printf("%3d %3.3f %3.3f\n",j,xLoc,yLoc);
+
+   if (dxf)
+   {
+    d.circle(curX, curY, toolSize[t] / 2.0);
+   }
+//     System.out.printf("%3d %3.3f %3.3f\n", j, xLoc, yLoc);
    k++;
   }
   System.out.printf("Tool %d %5.3f Holes %3d Path %4.1f inches\n",
-		    t,toolSize[t],holes,total);
+		    t, toolSize[t], holeCount, total);
   list.clear();
  }
 
@@ -499,6 +835,32 @@ public class Drill
   }
  }
 
+ public class Hole1 implements Comparable<Drill.Hole1>
+ {
+  public double x;
+  public double y;
+  public double size;
+
+  public Hole1(double xLoc, double yLoc, double size)
+  {
+   x = xLoc;
+   y = yLoc;
+   this.size = size / 2.0;
+  }
+
+  @Override public int compareTo(Hole1 h)
+  {
+   int compare;
+
+   compare = (int) Math.signum(x - h.x);
+   if (compare == 0)
+   {
+    compare = (int) Math.signum(y - h.y);
+   }
+   return(compare);
+  }
+ }
+
  public class Image
  {
   BufferedImage image;
@@ -512,28 +874,28 @@ public class Drill
    int nScale = (int) (gScale / scale);
    w0 = w / nScale;
    h0 = h / nScale;
-   image = new BufferedImage(w0,h0,BufferedImage.TYPE_INT_RGB);
+   image = new BufferedImage(w0, h0, BufferedImage.TYPE_INT_RGB);
    g = image.createGraphics();
    g.setColor(new Color(BACKGROUND));
-   g.fillRect(0,0,w0,h0);
+   g.fillRect(0, 0, w0, h0);
    g.setColor(Color.BLACK);
    data = new int[w0 * h0];
   }
 
   public void getData()
   {
-   image.getRGB(0,0,w0,h0,data,0,w0);
+   image.getRGB(0, 0, w0, h0, data, 0, w0);
   }
 
   public void setData()
   {
-   image.setRGB(0,0,w0,h0,data,0,w0);
+   image.setRGB(0, 0, w0, h0, data, 0, w0);
   }
 
   public void line(double x0, double y0, double x1, double y1)
   {
    g.setColor(Color.BLUE);
-   BasicStroke stroke = new BasicStroke(1,BasicStroke.CAP_ROUND,
+   BasicStroke stroke = new BasicStroke(1, BasicStroke.CAP_ROUND,
 				       BasicStroke.JOIN_MITER);
    g.setStroke(stroke);
 
@@ -547,7 +909,7 @@ public class Drill
   public void circle(double x, double y, double r)
   {
    g.setColor(Color.BLACK);
-   BasicStroke stroke = new BasicStroke(1,BasicStroke.CAP_ROUND,
+   BasicStroke stroke = new BasicStroke(1, BasicStroke.CAP_ROUND,
 				       BasicStroke.JOIN_MITER);
    g.setStroke(stroke);
 
@@ -555,28 +917,59 @@ public class Drill
    double d = 2 * offset;
    Ellipse2D shape = new Ellipse2D.Double((x * scale - offset),
 					  (y * scale - offset),
-					  d,d);
+					  d, d);
    g.fill(shape);
   }
 
+  public void circle(Color color, double x, double y, double r)
+  {
+   g.setColor(color);
+   BasicStroke stroke = new BasicStroke(1, BasicStroke.CAP_ROUND,
+				       BasicStroke.JOIN_MITER);
+   g.setStroke(stroke);
+
+   double offset = r * scale;
+   double d = 2 * offset;
+   Ellipse2D shape = new Ellipse2D.Double((x * scale - offset),
+					  (y * scale - offset),
+					  d, d);
+   g.fill(shape);
+  }
+
+  public void probe(double x, double y, double r)
+  {
+   g.setColor(Color.RED);
+   BasicStroke stroke = new BasicStroke(1, BasicStroke.CAP_ROUND,
+				       BasicStroke.JOIN_MITER);
+   g.setStroke(stroke);
+
+   double offset = r * scale;
+   double d = 2 * offset;
+   Ellipse2D shape = new Ellipse2D.Double((x * scale - offset),
+					  (y * scale - offset),
+					  d, d);
+   g.fill(shape);
+  }
+  
   public void write(int[] data, String f)
   {
    int j = h0 * w0;
    for (int i = 0; i < h0; i++)
    {
     j -= w0;
-    image.setRGB(0,i,w0,1,data,j,w0);
+    image.setRGB(0, i, w0, 1, data, j, w0);
    }
    write(f);
   }
 
   public void write(String f)
   {
-   File file = new File(f + ".bmp");
+   String tmp = f + (side.equals("b") ? side : "") + ".png";
+   File file = new File(tmp);
 
    try
    {
-    ImageIO.write(image,"bmp",file);
+    ImageIO.write(image, "png", file);
    }
    catch (IOException e)
    {
@@ -664,7 +1057,7 @@ public class Drill
   {
    if (i < MAXAPERTURE)
    {
-    aperture[i] = new Aperture(i,v1);
+    aperture[i] = new Aperture(i, v1);
    }
   }
 
@@ -672,7 +1065,7 @@ public class Drill
   {
    if (i < MAXAPERTURE)
    {
-    aperture[i] = new Aperture(i,v1,v2);
+    aperture[i] = new Aperture(i, v1, v2);
    }
   }
 
@@ -715,7 +1108,7 @@ public class Drill
    public void draw(Graphics2D g, double x0, double y0)
    {
     g.setColor(Color.GRAY);
-    BasicStroke stroke = new BasicStroke(1,BasicStroke.CAP_ROUND,
+    BasicStroke stroke = new BasicStroke(1, BasicStroke.CAP_ROUND,
 					 BasicStroke.JOIN_MITER);
     g.setStroke(stroke);
 
@@ -725,7 +1118,7 @@ public class Drill
      double diam = val1 * scale;
      Ellipse2D shape = new Ellipse2D.Double((x0 - offset) * scale,
 					    (y0 - offset) * scale,
-					    diam,diam);
+					    diam, diam);
      g.fill(shape);
     }
     else if (type == SQUARE)
@@ -734,7 +1127,7 @@ public class Drill
      double yOfs = val2 / 2;
      Rectangle2D shape = new Rectangle2D.Double(((x0 - xOfs) * scale),
 						(y0 - yOfs) * scale,
-						val1 * scale ,val2 * scale);
+						val1 * scale , val2 * scale);
      g.fill(shape);
     }
    }
