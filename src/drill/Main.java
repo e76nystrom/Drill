@@ -90,6 +90,7 @@ public class Main
    }
   }
 
+  System.out.printf("%s\n", line);
   Scanner sc = new Scanner(line);
   MatchResult m;
   while (sc.hasNext())
