@@ -379,6 +379,11 @@ public class Drill
 		
      prb.printf("(PROBEOPEN %s_%s.prb)\n", project, side);
 
+     if (probeHoles)
+     {
+      image.getData();
+     }
+
      boolean fwd = true;
      int j0;
      for (int i = 0; i < xPoints; i++)
@@ -813,7 +818,7 @@ public class Drill
    {
     d.line(curX, curY, h.x, h.y);
    }
-   image.line(curX, curY, h.x, h.y);
+//   image.line(curX, curY, h.x, h.y);
    if (dxf)
    {
     d.text((h.x + curX) / 2.0 + .005, (h.y + curY) / 2.0 + 0.005,
@@ -1040,9 +1045,34 @@ public class Drill
    data = new int[w0 * h0];
   }
 
+  public void test()
+  {
+   try
+   {
+    PrintWriter tst;
+   
+    tst = new PrintWriter(new BufferedWriter(new FileWriter("test.txt")));
+    int size = w0 * h0;
+    System.out.printf("size %d\n", size);
+    for (int i = 0; i < size; i++)
+    {
+     if (data[i] == black)
+     {
+      int x = i % w0;
+      int y = i / w0;
+      tst.printf("%8d (%6d %6d)\n", i, x, y);
+     }
+    }
+   }
+   catch (IOException e)
+   {
+   }
+  }
+
   public boolean check(int x, int y)
   {
    int i = x + y * w0;
+//   System.out.printf("(%6d, %6d) %10d %8x\n", x, y, i, data[i]);
    return(data[i] == black);
   }
 
