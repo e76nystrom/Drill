@@ -84,6 +84,7 @@ public class Drill
  String side;
  int probeX;
  int probeY;
+ boolean metric;
 
  double depth;
  double retract;
@@ -94,12 +95,14 @@ public class Drill
  public static final int BACKGROUND = new Color(0xe0, 0xff, 0xff).getRGB();
  public static final int GRID       = new Color(0xe0, 0x00, 0xff).getRGB();
 
- public Drill(String inputFile, boolean flipX, boolean output, boolean dxf)
+ public Drill(String inputFile, boolean flipX, boolean output, boolean dxf,
+	      boolean metric)
  {
   this.inputFile = inputFile;
   this.flipX = flipX;
   this.output = output;
   this.dxf = dxf;
+  this.metric = metric;
  }
 
  public void setParameters(double depth, double retract, double safeZ,
@@ -136,6 +139,9 @@ public class Drill
 
  public void process()
  {
+  Pattern p = Pattern.compile("^T(\\d+)C?([\\d\\.]*)");
+  Pattern p1 = Pattern.compile("^X([-\\+\\d\\.]+)Y([-\\+\\d\\.]+)");
+  Matcher m;
   toolSize = new Double[20];
   list = new ArrayList<>();
   slotList = new ArrayList<>();
@@ -222,13 +228,27 @@ public class Drill
     while ((line = in.readLine()) != null)
     {
      line = line.trim();
-     if (line.indexOf("X") == 0) // T01C0.035
+//     System.out.printf("%s\n", line);
+     m = p1.matcher(line);
+     if (m.find())
+//     if (line.indexOf("X") == 0) // T01C0.035
      {
-      String x = line.substring(1, 7);
-      String y = line.substring(9, 15);
+//      String x = line.substring(1, 7);
+//      String y = line.substring(9, 15);
+      String x = m.group(1);
+      String y = m.group(2);
        
-      double xVal = Double.valueOf(x) / scale;
-      double yVal = Double.valueOf(y) / scale;
+      double xVal = Double.valueOf(x);
+      double yVal = Double.valueOf(y);
+      if (xVal > 10.0)
+      {
+       xVal /= scale;
+      }
+      if (yVal > 10.0)
+      {
+       yVal /= scale;
+      }
+//      System.out.printf("x %7.4f y %7.4f\n", xVal, yVal);
 
       Hole h = new Hole(xVal, yVal);
       list.add(h);
@@ -280,36 +300,46 @@ public class Drill
 //	list1.add(new Hole1(xVal, yVal, (double) toolSize[currentTool]));
 //       }
      }
-     else if (line.indexOf("T") == 0)
+     else
      {
-      if (line.indexOf("C") == 3) // T01C0.035
+      m = p.matcher(line);
+//      if (line.indexOf("T") == 0)
+      if (m.find())
       {
-       int t = Integer.valueOf(line.substring(1, 3));
-       if (toolSize[t] == null)
+       int t = Integer.valueOf(m.group(1));
+//       if (line.indexOf("C") == 3) // T01C0.035
+       String size = m.group(2);
+       if (size.length() != 0)
        {
-	toolSize[t] = Double.valueOf(line.substring(4));
-       }
-      }
-      else			// T01
-      {
-       lastTool = currentTool;
-       currentTool = Integer.valueOf(line.substring(1, 3));
-       if (lastTool > 0)
-       {
-	if (currentTool != lastTool)
+	/* int t = Integer.valueOf(line.substring(1, 3)); */
+	if (toolSize[t] == null)
 	{
-//	 if (true)
-	 process0(list, lastTool);
-	 if (!slotList.isEmpty())
+//	 toolSize[t] = Double.valueOf(line.substring(1, 3);
+	 toolSize[t] = Double.valueOf(size);
+	}
+       }
+       else			// T01
+       {
+	lastTool = currentTool;
+//	currentTool = Integer.valueOf(line.substring(1, 3));
+	currentTool = t;
+	if (lastTool > 0)
+	{
+	 if (currentTool != lastTool)
 	 {
-	  processSlots(slotList, lastTool);
-	  slotList.clear();
-	 }
+//	 if (true)
+	  process0(list, lastTool);
+	  if (!slotList.isEmpty())
+	  {
+	   processSlots(slotList, lastTool);
+	   slotList.clear();
+	  }
 //	 else
 //	 {
 //	  list.add(0, new Hole(xLoc, yLoc));
 //	  process1(list, lastTool);
 //	 }
+	 }
 	}
        }
       }
@@ -529,9 +559,16 @@ public class Drill
       if (xStr.length() != 0)
       {
        int x = Integer.parseInt(xStr);
-       if (x > 100000)
+       if (!metric)
        {
-	x /= 100;
+	if (x > 100000)
+	{
+	 x /= 100;
+	}
+       }
+       else
+       {
+	x /= 2540;
        }
        if (x > xMax)
        {
@@ -541,9 +578,16 @@ public class Drill
       if (yStr.length() != 0)
       {
        int y = Integer.parseInt(yStr);
-       if (y > 100000)
+       if (!metric)
        {
-	y /= 100;
+	if (y > 100000)
+	{
+	 y /= 100;
+	}
+       }
+       else
+       {
+	y /= 2540;
        }
        if (y > yMax)
        {

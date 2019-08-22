@@ -34,6 +34,7 @@ public class Main
   boolean flipX = true;
   boolean dxf = false;
   boolean output = true;
+  boolean metric = false;
   String side = "t";
   Pattern pSpec = Pattern.compile("-([a-zA-Z])");
   Pattern p1Spec = Pattern.compile("--([a-zA-Z]*)=?(\\S*)");
@@ -141,6 +142,9 @@ public class Main
      case 'c':			/* generate dxf file */
       dxf = true;
       break;
+     case 'M':
+      metric = true;
+      break;
      case 'p':			/* generate probe file */
       if (sc.hasNext(probeSpec))
       {
@@ -240,7 +244,7 @@ public class Main
 
   System.out.printf("Processing %s\n", inputFile);
   System.out.printf("drill 03/18/2017\n");
-  Drill drill = new Drill(inputFile, flipX, output, dxf);
+  Drill drill = new Drill(inputFile, flipX, output, dxf, metric);
   drill.setParameters(depth, retract, safeZ, feed, change);
   drill.setProbe(probeFlag, probeHoles, probeX, probeY, side,
 		 probeDepth, probeRetract);
